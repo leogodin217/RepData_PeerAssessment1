@@ -1,20 +1,172 @@
-# Reproducible Research: Peer Assessment 1
+---
+title: "step_analysis"
+author: "Leo Godin"
+date: "Saturday, July 19, 2014"
+output: html_document
+---
+
+Step Analysis For One Anonymous User
+====================================
+##Summary
+Using fitness trackers, we can measure the number of steps we take over time. This analysis looks at steps taken in five-minute increments. 
+
+```{r}
+library(plyr)
+library(ggplot2)
+```
+
+The first order of business is to load the data. The data
+```{r}
+zipfile = "activity.zip"
+unzip(zipfile)
+datafile = "activity.csv"
+data = read.csv(datafile, na.strings="NA")
+```
+
+Since we know that the dates are important for calculating daily activity, we will convert the date factor to the date type
+```{r}
+data$date = strptime(data$date, format="%Y-%m-%d")
+```
+
+**What is mean total number of steps taken per day?**
+
+We're not concerned with missing data here, so we'll simply remove missing values.  We don't want to do this on the "data" data.frame because later on we will try to estimate values for NAs
+
+Plot the frequency of daily steps using 30 breaks
+
+```{r}
+steps = data[!is.na(data$steps),]
+daily_steps = ddply(steps, "date", function(x) sum(x$steps))
+names(daily_steps) = c("date", "steps")
+png(filename="figures/daily_steps.png")
+hist(daily_steps$steps, breaks=30, 
+                        ylab="Frequency", 
+                        xlab="Number of steps", 
+                        main="Daily Steps With Missing Values skipped")
+dev.off()
+hist(daily_steps$steps, breaks=30, 
+                        ylab="Frequency", 
+                        xlab="Number of steps", 
+                        main="Daily Steps With Missing Values skipped")
+```
+
+What is the mean?
+```{r}
+mean(daily_steps$steps)
+```
+What is the daily median?
+```{r}
+median(daily_steps$steps)
+```
+
+**What is the average daily activity pattern?***
+
+We want to calculate the mean number of steps per five-minute period across all days. Again, we're not concerned with missing values, so we will remove them. We also want to convert the intervals to a factor. 
+
+```{r}
+  interval_data = data[!is.na(data$steps),]
+  interval_data$interval = as.factor(interval_data$interval)
+  interval_steps = ddply(interval_data, "interval", function(x) mean(x$steps))
+  names(interval_steps) = c("interval", "steps")
+  png(filename="figures/average_daily_steps.png")
+  plot(interval_steps$interval, interval_steps$steps, 
+       type="l", 
+       xlab="Five-minute interval",
+       ylab="Number of steps",
+       main="Average Steps By Five-minute Interval")
+  dev.off()
+  plot(interval_steps$interval, interval_steps$steps, 
+       type="l", 
+       xlab="Five-minute interval",
+       ylab="Number of steps",
+       main="Average Steps By Five-minute Interval")
+
+```
+
+What five-minute interval has the most average steps per day? For this we will sort the data.frame and take the first interval
+
+```{r}
+as.character(interval_steps[order(-interval_steps$steps),][1,1])
+```
+
+**Imputing missing values**
+
+Calculate and report the total number of missing values in the dataset (i.e. the total number of rows with NAs)
+
+```{r}
+dim(data[is.na(data$steps),])[1]
+```
+
+To fill in missing data, we will take the mean of that interval. We calculated this earlier, but for clarity, we will do it again here. The process takes three steps
+1. Separate missing and non-missing data
+2. Calculate the mean for non-missing data by interval
+3. merge the missing data with the mean data
+4. Combine the merged missing data and non-missing data
+
+```{r}
+  interval_data = data[!is.na(data$steps),]
+  missing_data = data[is.na(data$steps),]
+  interval_means = ddply(interval_data, "interval", function(x) mean(x$steps))
+  estimated_data = merge(missing_data, interval_means, by="interval")
+  # Remove the old steps column
+  estimated_data = estimated_data[,c(1, 3, 4)]
+  names(estimated_data) = c("interval", "date", "steps")
+  estimated_steps = rbind(interval_data, estimated_data)
+  
+```
 
 
-## Loading and preprocessing the data
 
 
+Make a histogram of the total number of steps taken each day and Calculate and report the mean and median total number of steps taken per day. Do these values differ from the estimates from the first part of the assignment? What is the impact of imputing missing data on the estimates of the total daily number of steps?
 
-## What is mean total number of steps taken per day?
+```{r}
+daily_steps = ddply(estimated_steps, "date", function(x) sum(x$steps))
+names(daily_steps) = c("date", "steps")
+png(filename="figures/daily_steps_estimated.png")
+hist(daily_steps$steps, xlab="Daily steps", ylab="Frequency", main="Daily Steps With Estimated Missing Values", breaks=30)
+dev.off()
+hist(daily_steps$steps, xlab="Daily steps", ylab="Frequency", main="Daily Steps With Estimated Missing Values", breaks=30)
+```
+Mean daily steps with estimation
+```{r}
+mean(daily_steps$steps)
+```
+Median daily steps with estimation
+```{r}
+median(daily_steps$steps)
+```
 
+Comparing this to the data where we did not estimate missing values, we see that the mean is unchanged and the medien is higher by 1.
 
+**Are there differences in activity patterns between weekdays and weekends?**
 
-## What is the average daily activity pattern?
+For this part, we will use the data that includes estimation. 
+ Create a new factor variable in the dataset with two levels – “weekday” and “weekend” indicating whether a given date is a weekday or weekend day. 
 
+```{r}
+# We use %u as it returns an integer from 1-7 with Monday being 1. This allows us to subset on >=6 to determine 
+# the weekend.
+weekdays = strftime(estimated_steps$date, format="%u")
+weekend_designation = rep(0, length(weekdays))
+weekend_designation[weekdays >= 6] = 1
+# Convert to factor and set levels
+week_part = as.factor(weekend_designation)
+levels(week_part) = c("weekday", "weekend")
+estimated_steps$week_part = week_part
+```
+Make a panel plot containing a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis). The plot should look something like the following, which was creating using simulated data:
 
+```{r}
+average_steps = ddply(estimated_steps, c("week_part", "interval"), function(x) mean(x$steps))
+names(average_steps) = c("week_part", "interval", "steps")
+png(filename="figures/steps_by_weekpart.png")
+ggplot(average_steps, aes(x=interval, y=steps)) +
+  geom_line() + 
+  facet_grid(week_part ~ .)
+dev.off()
+ggplot(average_steps, aes(x=interval, y=steps)) +
+  geom_line() + 
+  facet_grid(week_part ~ .)
+```
 
-## Imputing missing values
-
-
-
-## Are there differences in activity patterns between weekdays and weekends?
